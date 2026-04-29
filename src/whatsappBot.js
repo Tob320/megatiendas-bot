@@ -1,193 +1,173 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const pino = require('pino');
 const qrcode = require('qrcode');
+const path = require('path');
 const { processMessage } = require('./aiEngine');
 const storage = require('./storageManager');
 const { sendSSTAlert } = require('./emailService');
 
-const COMPANY_NUMBER = process.env.COMPANY_PHONE || '3205932136';
-const MAX_RECONNECT  = 5;
+const SESSIONS_DIR = path.join(__dirname, '..', 'data', 'sessions');
+const MAX_RECONNECT = 5;
 
-let client;
+let sock;
 let reconnectAttempts = 0;
-let currentIo;
-let qrReady = false; // true when client is in QR state and ready for pairing code
 
-// ─── Client factory ───────────────────────────────────────────────────────────
+// ─── Extraer texto plano del mensaje Baileys ──────────────────────────────────
 
-function createClient() {
-  return new Client({
-    authStrategy: new LocalAuth({ dataPath: './data/sessions' }),
-    webVersion: '2.2412.54',
-    webVersionCache: { type: 'local', path: './data/wwebjs_cache' },
-    puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--hide-scrollbars',
-        '--metrics-recording-only',
-        '--mute-audio',
-        '--no-default-browser-check',
-        '--safebrowsing-disable-auto-update',
-        '--js-flags=--max-old-space-size=256'
-      ],
-      ...(process.env.PUPPETEER_EXECUTABLE_PATH && {
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
-      })
+function extractText(msg) {
+  const m = msg.message;
+  if (!m) return '';
+  return m.conversation
+    || m.extendedTextMessage?.text
+    || m.imageMessage?.caption
+    || m.videoMessage?.caption
+    || m.buttonsResponseMessage?.selectedDisplayText
+    || m.listResponseMessage?.title
+    || '';
+}
+
+// ─── Conexión principal ───────────────────────────────────────────────────────
+
+async function connect(io) {
+  const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
+  const { version } = await fetchLatestBaileysVersion();
+
+  sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
+    browser: ['Megatiendas GH Bot', 'Chrome', '3.0'],
+    generateHighQualityLinkPreview: false,
+    syncFullHistory: false,
+    markOnlineOnConnect: false
+  });
+
+  // Persistir credenciales en cada actualización
+  sock.ev.on('creds.update', saveCreds);
+
+  // ── Eventos de conexión ──
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      global.whatsappStatus = 'qr';
+      try {
+        const dataUrl = await qrcode.toDataURL(qr, { width: 260 });
+        io.emit('qr', { qr: dataUrl });
+        io.emit('status', { status: 'qr' });
+        console.log('[WHATSAPP] QR listo para escanear.');
+      } catch (e) {
+        console.error('[QR]', e.message);
+      }
+    }
+
+    if (connection === 'open') {
+      console.log('[WHATSAPP] ✓ Conectado y listo.');
+      global.whatsappStatus = 'connected';
+      reconnectAttempts = 0;
+      io.emit('status', { status: 'connected' });
+      io.emit('qr', { qr: null });
+    }
+
+    if (connection === 'close') {
+      const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      const loggedOut  = statusCode === DisconnectReason.loggedOut;
+
+      console.warn('[WHATSAPP] Desconectado. Código:', statusCode);
+      global.whatsappStatus = 'disconnected';
+      io.emit('status', { status: 'disconnected' });
+
+      if (loggedOut) {
+        console.log('[WHATSAPP] Sesión cerrada por el usuario. Requiere nuevo QR.');
+        io.emit('status', { status: 'auth_failed' });
+        return;
+      }
+
+      if (reconnectAttempts < MAX_RECONNECT) {
+        reconnectAttempts++;
+        const delay = Math.min(3000 * reconnectAttempts, 30_000);
+        console.log(`[WHATSAPP] Reconectando en ${delay / 1000}s (intento ${reconnectAttempts}/${MAX_RECONNECT})…`);
+        setTimeout(() => connect(io), delay);
+      } else {
+        console.error('[WHATSAPP] Máximo de reconexiones alcanzado.');
+        io.emit('status', { status: 'max_reconnect_reached' });
+      }
+    }
+  });
+
+  // ── Mensajes entrantes ──
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const msg of messages) {
+      if (!msg.message || msg.key.fromMe) continue;
+
+      const jid = msg.key.remoteJid || '';
+      if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue;
+
+      const phone = jid.replace('@s.whatsapp.net', '');
+      const text  = extractText(msg).trim();
+      if (!text) continue;
+
+      console.log(`[MSG] ${phone}: ${text.substring(0, 70)}`);
+
+      await storage.saveMessage({ phone, role: 'user', content: text, category: 'incoming' });
+
+      try {
+        const { response, category, isSST } = await processMessage(phone, text);
+
+        await storage.saveMessage({ phone, role: 'assistant', content: response, category });
+        storage.saveKPIEvent({ phone, category, messagePreview: text });
+
+        io.emit('new_message', {
+          phone,
+          category,
+          preview:   text.substring(0, 90),
+          timestamp: new Date().toISOString()
+        });
+
+        if (isSST) {
+          const ts = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+          await sendSSTAlert({ phone, message: text, timestamp: ts });
+          io.emit('sst_alert', { phone, message: text });
+          console.warn(`[SST CRÍTICO] Accidente reportado por ${phone}`);
+        }
+
+        await sock.sendMessage(jid, { text: response });
+
+      } catch (err) {
+        console.error('[AI] Error:', err.message);
+        await sock.sendMessage(jid, {
+          text: 'En este momento no puedo procesar tu consulta. Por favor escríbenos a *apturnos@megatiendas.co* o intenta de nuevo.'
+        }).catch(() => {});
+      }
     }
   });
 }
 
-// ─── Reconnect with exponential backoff ──────────────────────────────────────
+// ─── Pairing code ─────────────────────────────────────────────────────────────
 
-function scheduleReconnect() {
-  if (reconnectAttempts >= MAX_RECONNECT) {
-    console.error('[WHATSAPP] Máximo de reconexiones alcanzado. Requiere intervención manual.');
-    currentIo.emit('status', { status: 'max_reconnect_reached' });
-    return;
-  }
+async function requestPairingCode(phone) {
+  if (!sock) throw new Error('Bot no inicializado todavía. Espera unos segundos.');
+  if (global.whatsappStatus === 'connected') throw new Error('Ya hay una sesión activa.');
 
-  reconnectAttempts++;
-  const delay = Math.min(5000 * reconnectAttempts, 60_000);
-  console.log(`[WHATSAPP] Reconectando en ${delay / 1000}s (intento ${reconnectAttempts}/${MAX_RECONNECT})…`);
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length < 10) throw new Error('Número inválido. Usa el código de país (ej: 573205932136).');
 
-  setTimeout(async () => {
-    try {
-      await client.destroy().catch(() => {});
-      attachEvents(currentIo);
-      await client.initialize();
-    } catch (err) {
-      console.error('[WHATSAPP] Error en reconexión:', err.message);
-      scheduleReconnect();
-    }
-  }, delay);
-}
-
-// ─── Event binding ────────────────────────────────────────────────────────────
-
-function attachEvents(io) {
-  client = createClient();
-
-  client.on('qr', async (qr) => {
-    console.log('[WHATSAPP] Nuevo QR generado — escanear en el dashboard.');
-    global.whatsappStatus = 'qr';
-    qrReady = true;
-    try {
-      const dataUrl = await qrcode.toDataURL(qr, { width: 256 });
-      io.emit('qr', { qr: dataUrl });
-      io.emit('status', { status: 'qr' });
-    } catch (e) {
-      console.error('[QR]', e.message);
-    }
-  });
-
-  client.on('authenticated', () => {
-    console.log('[WHATSAPP] Sesión autenticada.');
-    global.whatsappStatus = 'authenticated';
-    qrReady = false;
-    io.emit('status', { status: 'authenticated' });
-    reconnectAttempts = 0;
-  });
-
-  client.on('ready', () => {
-    console.log(`[WHATSAPP] Listo. Número: ${COMPANY_NUMBER}`);
-    global.whatsappStatus = 'connected';
-    io.emit('status', { status: 'connected' });
-    io.emit('qr', { qr: null });
-  });
-
-  client.on('auth_failure', (msg) => {
-    console.error('[WHATSAPP] Fallo de autenticación:', msg);
-    global.whatsappStatus = 'auth_failed';
-    io.emit('status', { status: 'auth_failed' });
-    // Session is invalid; operator must restart and scan a new QR
-  });
-
-  client.on('disconnected', (reason) => {
-    console.warn('[WHATSAPP] Desconectado:', reason);
-    global.whatsappStatus = 'disconnected';
-    io.emit('status', { status: 'disconnected', reason });
-    scheduleReconnect();
-  });
-
-  client.on('message', handleMessage);
-}
-
-// ─── Message handler ──────────────────────────────────────────────────────────
-
-async function handleMessage(message) {
-  // Skip groups, broadcast, and non-text
-  if (message.from.includes('@g.us') || message.from === 'status@broadcast') return;
-  if (message.isStatus || !message.body?.trim()) return;
-
-  const phone    = message.from.replace('@c.us', '');
-  const userText = message.body.trim();
-
-  console.log(`[MSG] ${phone}: ${userText.substring(0, 70)}`);
-
-  await storage.saveMessage({ phone, role: 'user', content: userText, category: 'incoming' });
-
-  try {
-    const { response, category, isSST } = await processMessage(phone, userText);
-
-    await storage.saveMessage({ phone, role: 'assistant', content: response, category });
-    storage.saveKPIEvent({ phone, category, messagePreview: userText });
-
-    currentIo.emit('new_message', {
-      phone,
-      category,
-      preview:   userText.substring(0, 90),
-      timestamp: new Date().toISOString()
-    });
-
-    if (isSST) {
-      const ts = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
-      await sendSSTAlert({ phone, message: userText, timestamp: ts });
-      currentIo.emit('sst_alert', { phone, message: userText });
-      console.warn(`[SST CRÍTICO] Accidente reportado por ${phone}`);
-    }
-
-    await message.reply(response);
-
-  } catch (err) {
-    console.error('[AI] Error procesando mensaje:', err.message);
-    await message.reply(
-      'En este momento no puedo procesar tu consulta. Por favor escríbenos a *apturnos@megatiendas.co* o vuelve a intentarlo en unos minutos.'
-    ).catch(() => {});
-  }
+  const code = await sock.requestPairingCode(cleaned);
+  console.log(`[WHATSAPP] Pairing code para ${cleaned}: ${code}`);
+  return code;
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 function initWhatsApp(io) {
-  currentIo = io;
-  attachEvents(io);
-  client.initialize().catch((err) => {
+  connect(io).catch((err) => {
     console.error('[WHATSAPP] Error al inicializar:', err.message);
-    scheduleReconnect();
+    setTimeout(() => connect(io), 5000);
   });
-}
-
-// ─── Pairing code (vincular por número de teléfono) ──────────────────────────
-
-async function requestPairingCode(phone) {
-  if (!qrReady) throw new Error('El cliente no está en estado QR. Espera a que aparezca el QR primero.');
-  // WhatsApp requiere el número sin + y sin espacios, con código de país (ej: 573205932136)
-  const cleaned = phone.replace(/\D/g, '');
-  const code = await client.requestPairingCode(cleaned);
-  console.log(`[WHATSAPP] Pairing code para ${cleaned}: ${code}`);
-  return code;
 }
 
 module.exports = { initWhatsApp, requestPairingCode };

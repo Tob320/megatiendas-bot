@@ -1,6 +1,6 @@
 {
   "name": "megatiendas-bot-gh",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Bot de WhatsApp para Gestión Humana — Megatiendas Invercomer",
   "main": "server.js",
   "scripts": {
@@ -12,15 +12,16 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.0",
     "better-sqlite3": "^9.4.3",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "fs-extra": "^11.2.0",
     "nodemailer": "^6.9.7",
+    "pino": "^8.17.0",
     "qrcode": "^1.5.3",
-    "qrcode-terminal": "^0.12.0",
-    "socket.io": "^4.7.2",
-    "whatsapp-web.js": "^1.23.0"
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
