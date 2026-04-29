@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bot Gestión Humana — Megatiendas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: #f1f5f9; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot-green  { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+    .dot-amber  { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; animation: blink 1s infinite; }
+    .dot-red    { background: #ef4444; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+    #msgList::-webkit-scrollbar,
+    #convResults::-webkit-scrollbar { width: 4px; }
+    #msgList::-webkit-scrollbar-thumb,
+    #convResults::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- ── Header ── -->
+  <header style="background:#003087" class="shadow-md text-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+      <div>
+        <p class="font-bold text-base leading-tight">Megatiendas Invercomer</p>
+        <p class="text-xs text-blue-200">Bot Gestión Humana · Monitor en Vivo</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="dot dot-red" id="statusDot"></span>
+        <span class="text-sm font-medium" id="statusText">Conectando…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- ── KPI Cards ── -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white rounded-2xl shadow p-5 border-l-[5px]" style="border-color:#003087">
+        <p class="text-xs text-gray-400 uppercase tracking-widest">Hoy</p>
+        <p class="text-4xl font-extrabold text-gray-800 mt-1" id="kToday">—</p>
+        <p class="text-xs text-gray-400 mt-0.5">mensajes</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 border-l-[5px]" style="border-color:#D41830">
+        <p class="text-xs text-gray-400 uppercase tracking-widest">Total</p>
+        <p class="text-4xl font-extrabold text-gray-800 mt-1" id="kTotal">—</p>
+        <p class="text-xs text-gray-400 mt-0.5">consultas</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 border-l-[5px] border-emerald-500">
+        <p class="text-xs text-gray-400 uppercase tracking-widest">Usuarios</p>
+        <p class="text-4xl font-extrabold text-gray-800 mt-1" id="kUsers">—</p>
+        <p class="text-xs text-gray-400 mt-0.5">únicos</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 border-l-[5px] border-amber-500">
+        <p class="text-xs text-gray-400 uppercase tracking-widest">SST Alertas</p>
+        <p class="text-4xl font-extrabold text-gray-800 mt-1" id="kSST">0</p>
+        <p class="text-xs text-gray-400 mt-0.5">hoy</p>
+      </div>
+    </div>
+
+    <!-- ── QR + Chart ── -->
+    <div class="grid md:grid-cols-2 gap-6">
+
+      <!-- QR panel -->
+      <div class="bg-white rounded-2xl shadow p-6 flex flex-col">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Estado WhatsApp</p>
+        <div class="flex-1 flex items-center justify-center">
+
+          <!-- QR waiting -->
+          <div id="panelQR" class="hidden text-center">
+            <p class="text-sm font-medium text-amber-600 mb-3">Escanea con WhatsApp</p>
+            <img id="qrImg" src="" alt="QR Code"
+              class="rounded-xl border border-gray-200 shadow-md mx-auto"
+              style="width:220px;height:220px;object-fit:contain">
+          </div>
+
+          <!-- Connected -->
+          <div id="panelOK" class="hidden text-center py-4">
+            <div class="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg class="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <p class="font-bold text-emerald-700 text-lg">Bot Activo</p>
+            <p class="text-xs text-gray-400 mt-1">Número: <span id="companyNum">3205932136</span></p>
+          </div>
+
+          <!-- Disconnected / error -->
+          <div id="panelOff" class="text-center py-4">
+            <div class="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg class="w-10 h-10 text-red-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </div>
+            <p class="font-semibold text-gray-500">Desconectado</p>
+            <p class="text-xs text-gray-400 mt-1" id="offReason">Esperando inicialización…</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="bg-white rounded-2xl shadow p-6">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Consultas por Categoría</p>
+        <canvas id="catChart"></canvas>
+        <p id="chartEmpty" class="text-sm text-gray-400 text-center mt-6 hidden">Sin datos aún.</p>
+      </div>
+
+    </div>
+
+    <!-- ── Live feed ── -->
+    <div class="bg-white rounded-2xl shadow p-6">
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest">Actividad en Tiempo Real</p>
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      </div>
+      <div id="msgList" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+        <p id="msgEmpty" class="text-sm text-gray-400 text-center py-6">Sin actividad aún.</p>
+      </div>
+    </div>
+
+    <!-- ── Conversation explorer ── -->
+    <div class="bg-white rounded-2xl shadow p-6">
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Explorador de Conversaciones</p>
+      <div class="flex flex-wrap gap-3 mb-4">
+        <input id="sPhone" type="text" placeholder="Celular (ej: 3001234567)"
+          class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]
+                 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <select id="sMonth"
+          class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">Todos los meses</option>
+          <option value="01">Enero</option><option value="02">Febrero</option>
+          <option value="03">Marzo</option><option value="04">Abril</option>
+          <option value="05">Mayo</option><option value="06">Junio</option>
+          <option value="07">Julio</option><option value="08">Agosto</option>
+          <option value="09">Septiembre</option><option value="10">Octubre</option>
+          <option value="11">Noviembre</option><option value="12">Diciembre</option>
+        </select>
+        <select id="sYear"
+          class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="2025">2025</option>
+          <option value="2026" selected>2026</option>
+        </select>
+        <button onclick="searchConversations()"
+          class="px-5 py-2 text-sm font-semibold text-white rounded-lg hover:opacity-90 transition"
+          style="background:#003087">Buscar</button>
+      </div>
+      <div id="convResults" class="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+        <p class="text-sm text-gray-400 text-center py-6">Usa el buscador para explorar conversaciones.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- SST toast -->
+  <div id="sstToast"
+    class="fixed bottom-5 right-5 max-w-sm bg-red-50 border-2 border-red-500 text-red-700
+           rounded-2xl shadow-2xl p-4 hidden z-50 transition-all">
+    <p class="font-bold text-sm">⚠️ Alerta SST — Acción inmediata</p>
+    <p class="text-xs mt-1 leading-relaxed" id="sstMsg"></p>
+  </div>
+
+  <footer class="text-center py-6 text-xs text-gray-400">
+    Megatiendas Invercomer © 2026 — Bot Gestión Humana · Ley 2466 · Ley 1581
+  </footer>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const CAT_COLORS = {
+  Nómina:   '#003087',
+  SST:      '#D41830',
+  Jurídica: '#7c3aed',
+  'P&P':    '#f59e0b',
+  General:  '#6b7280'
+};
+let catChart = null;
+let sstCount  = 0;
+
+// ─── Socket ───────────────────────────────────────────────────────────────────
+const socket = io();
+
+socket.on('status', ({ status, reason }) => {
+  const dot  = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const qr   = document.getElementById('panelQR');
+  const ok   = document.getElementById('panelOK');
+  const off  = document.getElementById('panelOff');
+
+  dot.className = 'dot';
+  [qr, ok, off].forEach(p => p.classList.add('hidden'));
+
+  if (status === 'connected') {
+    dot.classList.add('dot-green');
+    text.textContent = 'Conectado';
+    ok.classList.remove('hidden');
+  } else if (status === 'qr' || status === 'authenticated') {
+    dot.classList.add('dot-amber');
+    text.textContent = status === 'qr' ? 'Escanear QR' : 'Autenticando…';
+    qr.classList.remove('hidden');
+  } else {
+    dot.classList.add('dot-red');
+    text.textContent = status === 'max_reconnect_reached'
+      ? 'Error — reiniciar manualmente'
+      : status === 'auth_failed' ? 'Sesión inválida' : 'Desconectado';
+    document.getElementById('offReason').textContent = reason || '';
+    off.classList.remove('hidden');
+  }
+});
+
+socket.on('qr', ({ qr }) => {
+  const img    = document.getElementById('qrImg');
+  const panel  = document.getElementById('panelQR');
+  const ok     = document.getElementById('panelOK');
+  const off    = document.getElementById('panelOff');
+  if (qr) {
+    img.src = qr;
+    [ok, off].forEach(p => p.classList.add('hidden'));
+    panel.classList.remove('hidden');
+  } else {
+    panel.classList.add('hidden');
+  }
+});
+
+socket.on('new_message', ({ phone, category, preview, timestamp }) => {
+  addToFeed(phone, category, preview, timestamp);
+  refreshStats();
+  refreshChart();
+});
+
+socket.on('sst_alert', ({ phone, message }) => {
+  sstCount++;
+  document.getElementById('kSST').textContent = sstCount;
+  showToast(phone, message);
+});
+
+// ─── Feed ─────────────────────────────────────────────────────────────────────
+function addToFeed(phone, category, preview, timestamp) {
+  const list  = document.getElementById('msgList');
+  const empty = document.getElementById('msgEmpty');
+  if (empty) empty.remove();
+
+  const color = CAT_COLORS[category] || '#6b7280';
+  const time  = new Date(timestamp).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+
+  const el = document.createElement('div');
+  el.className = 'flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors';
+  el.innerHTML = `
+    <span class="dot mt-1.5 flex-shrink-0" style="background:${color}"></span>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-medium text-gray-700">${phone}</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded-full text-white font-semibold"
+              style="background:${color}">${category}</span>
+        <span class="text-[10px] text-gray-400 ml-auto">${time}</span>
+      </div>
+      <p class="text-xs text-gray-500 truncate mt-0.5">${preview}</p>
+    </div>`;
+
+  list.prepend(el);
+  while (list.children.length > 25) list.removeChild(list.lastChild);
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+async function refreshStats() {
+  try {
+    const d = await fetch('/api/stats').then(r => r.json());
+    document.getElementById('kToday').textContent = d.todayCount  ?? '—';
+    document.getElementById('kTotal').textContent = d.totalCount  ?? '—';
+    document.getElementById('kUsers').textContent = d.uniqueUsers ?? '—';
+
+    const list = document.getElementById('msgList');
+    if (!list.children.length || list.querySelector('#msgEmpty')) {
+      (d.recentMessages || []).reverse().forEach(m =>
+        addToFeed(m.phone, m.category, m.message_preview || '', m.timestamp)
+      );
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ─── Chart ────────────────────────────────────────────────────────────────────
+async function refreshChart() {
+  try {
+    const data = await fetch('/api/kpi/categories').then(r => r.json());
+    const empty = document.getElementById('chartEmpty');
+
+    if (!data.length) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+
+    const labels = data.map(d => d.category);
+    const counts = data.map(d => d.count);
+    const colors = labels.map(l => CAT_COLORS[l] || '#6b7280');
+
+    if (catChart) {
+      catChart.data.labels                       = labels;
+      catChart.data.datasets[0].data             = counts;
+      catChart.data.datasets[0].backgroundColor  = colors;
+      catChart.update();
+    } else {
+      catChart = new Chart(document.getElementById('catChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Consultas',
+            data: counts,
+            backgroundColor: colors,
+            borderRadius: 6,
+            borderSkipped: false
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => ` ${c.parsed.y} consultas` } }
+          },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 }, grid: { color: '#f1f5f9' } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ─── Conversation search ──────────────────────────────────────────────────────
+async function searchConversations() {
+  const phone  = document.getElementById('sPhone').value.trim();
+  const month  = document.getElementById('sMonth').value;
+  const year   = document.getElementById('sYear').value;
+  const box    = document.getElementById('convResults');
+
+  box.innerHTML = '<p class="text-sm text-gray-400 text-center py-6">Buscando…</p>';
+
+  try {
+    const q = new URLSearchParams({ year });
+    if (phone) q.append('phone', phone);
+    if (month) q.append('month', month);
+
+    const data = await fetch(`/api/conversations?${q}`).then(r => r.json());
+
+    if (!data.length) {
+      box.innerHTML = '<p class="text-sm text-gray-400 text-center py-6">Sin resultados para los filtros seleccionados.</p>';
+      return;
+    }
+
+    box.innerHTML = '';
+    data.forEach(conv => {
+      const msgs = conv.messages.map(m => `
+        <div class="flex gap-2 py-1.5 border-b border-slate-100 last:border-0 text-xs">
+          <span class="w-14 flex-shrink-0 font-semibold ${m.role === 'user' ? 'text-blue-500' : 'text-emerald-600'}">
+            ${m.role === 'user' ? 'Usuario' : 'Bot'}
+          </span>
+          <p class="text-gray-600 leading-relaxed flex-1">${m.content}</p>
+          <span class="text-gray-400 flex-shrink-0">
+            ${new Date(m.timestamp).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </div>`).join('');
+
+      const card = document.createElement('div');
+      card.className = 'border border-slate-200 rounded-xl overflow-hidden';
+      card.innerHTML = `
+        <div class="flex items-center justify-between bg-slate-50 px-4 py-2 border-b border-slate-200">
+          <span class="text-sm font-semibold text-gray-700">📱 ${conv.phone}</span>
+          <span class="text-xs text-gray-400">${conv.date}</span>
+        </div>
+        <div class="max-h-52 overflow-y-auto px-4 py-2">${msgs}</div>`;
+      box.appendChild(card);
+    });
+  } catch(e) {
+    box.innerHTML = '<p class="text-sm text-red-400 text-center py-6">Error al consultar conversaciones.</p>';
+    console.error(e);
+  }
+}
+
+// ─── SST toast ────────────────────────────────────────────────────────────────
+function showToast(phone, message) {
+  document.getElementById('sstMsg').textContent = `${phone}: ${message.substring(0, 100)}`;
+  const t = document.getElementById('sstToast');
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 9000);
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+refreshStats();
+refreshChart();
+setInterval(refreshStats,  30_000);
+setInterval(refreshChart,  60_000);
+</script>
+</body>
+</html>
