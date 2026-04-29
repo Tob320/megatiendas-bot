@@ -17,6 +17,8 @@ let qrReady = false; // true when client is in QR state and ready for pairing co
 function createClient() {
   return new Client({
     authStrategy: new LocalAuth({ dataPath: './data/sessions' }),
+    webVersion: '2.2412.54',
+    webVersionCache: { type: 'local', path: './data/wwebjs_cache' },
     puppeteer: {
       headless: true,
       args: [
@@ -27,7 +29,18 @@ function createClient() {
         '--no-first-run',
         '--no-zygote',
         '--single-process',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--safebrowsing-disable-auto-update',
+        '--js-flags=--max-old-space-size=256'
       ],
       ...(process.env.PUPPETEER_EXECUTABLE_PATH && {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH

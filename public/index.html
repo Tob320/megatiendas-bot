@@ -9,6 +9,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     body { background: #f1f5f9; }
+    .tab-active   { background:#003087; color:#fff; }
+    .tab-inactive { background:#f8fafc; color:#64748b; }
+    .tab-inactive:hover { background:#f1f5f9; }
     .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
     .dot-green  { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
     .dot-amber  { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; animation: blink 1s infinite; }
@@ -65,52 +68,26 @@
     <!-- ── QR + Chart ── -->
     <div class="grid md:grid-cols-2 gap-6">
 
-      <!-- QR panel -->
+      <!-- Connection panel -->
       <div class="bg-white rounded-2xl shadow p-6 flex flex-col">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Estado WhatsApp</p>
-        <div class="flex-1 flex items-center justify-center">
 
-          <!-- QR waiting -->
-          <div id="panelQR" class="hidden text-center w-full">
-            <p class="text-sm font-medium text-amber-600 mb-3">Escanea con WhatsApp</p>
-            <img id="qrImg" src="" alt="QR Code"
-              class="rounded-xl border border-gray-200 shadow-md mx-auto mb-4"
-              style="width:200px;height:200px;object-fit:contain">
-
-            <!-- Vincular por número -->
-            <div class="border-t border-gray-100 pt-4 mt-2">
-              <p class="text-xs text-gray-500 mb-2">¿No puedes escanear? Vincula con tu número:</p>
-              <div class="flex gap-2 justify-center">
-                <input id="pairingPhone" type="tel" placeholder="573205932136"
-                  class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-44
-                         focus:outline-none focus:ring-2 focus:ring-amber-400">
-                <button onclick="requestPairing()"
-                  class="px-3 py-1.5 text-xs font-semibold text-white rounded-lg bg-amber-500 hover:bg-amber-600 transition">
-                  Obtener código
-                </button>
-              </div>
-              <div id="pairingResult" class="hidden mt-3">
-                <p class="text-xs text-gray-500 mb-1">Ingresa este código en WhatsApp →<br>Dispositivos vinculados → Vincular con número:</p>
-                <p id="pairingCode"
-                  class="text-3xl font-extrabold tracking-[0.3em] text-amber-600 mt-1"></p>
-              </div>
-              <p id="pairingError" class="hidden text-xs text-red-500 mt-2"></p>
-            </div>
-          </div>
-
-          <!-- Connected -->
-          <div id="panelOK" class="hidden text-center py-4">
+        <!-- Connected -->
+        <div id="panelOK" class="hidden flex-1 flex items-center justify-center">
+          <div class="text-center py-4">
             <div class="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
               <svg class="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
               </svg>
             </div>
             <p class="font-bold text-emerald-700 text-lg">Bot Activo</p>
-            <p class="text-xs text-gray-400 mt-1">Número: <span id="companyNum">3205932136</span></p>
+            <p class="text-xs text-gray-400 mt-1">Número: 3205932136</p>
           </div>
+        </div>
 
-          <!-- Disconnected / error -->
-          <div id="panelOff" class="text-center py-4">
+        <!-- Disconnected / error -->
+        <div id="panelOff" class="flex-1 flex items-center justify-center">
+          <div class="text-center py-4">
             <div class="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-3">
               <svg class="w-10 h-10 text-red-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -118,6 +95,57 @@
             </div>
             <p class="font-semibold text-gray-500">Desconectado</p>
             <p class="text-xs text-gray-400 mt-1" id="offReason">Esperando inicialización…</p>
+          </div>
+        </div>
+
+        <!-- QR + Pairing panel con pestañas -->
+        <div id="panelQR" class="hidden flex-col w-full">
+
+          <!-- Pestañas -->
+          <div class="flex rounded-xl overflow-hidden border border-gray-200 mb-4 text-sm font-semibold">
+            <button id="tabQR" onclick="switchTab('qr')"
+              class="flex-1 py-2 transition tab-active">
+              📷 Escanear QR
+            </button>
+            <button id="tabNum" onclick="switchTab('num')"
+              class="flex-1 py-2 transition tab-inactive">
+              📱 Usar número
+            </button>
+          </div>
+
+          <!-- Tab QR -->
+          <div id="contentQR" class="text-center">
+            <p class="text-xs text-amber-600 font-medium mb-2">Abre WhatsApp → Dispositivos vinculados → Escanear QR</p>
+            <img id="qrImg" src="" alt="QR Code"
+              class="rounded-xl border border-gray-200 shadow mx-auto"
+              style="width:190px;height:190px;object-fit:contain">
+            <p class="text-[10px] text-gray-400 mt-2">El código se actualiza automáticamente cada 20 s</p>
+          </div>
+
+          <!-- Tab Número -->
+          <div id="contentNum" class="hidden text-center px-2">
+            <p class="text-xs text-gray-600 mb-3 leading-relaxed">
+              Ingresa tu número <strong>con código de país</strong> (Colombia = 57).<br>
+              Ejemplo: <span class="font-mono bg-gray-100 px-1 rounded">573205932136</span>
+            </p>
+            <input id="pairingPhone" type="tel" placeholder="573205932136"
+              class="border border-gray-300 rounded-xl px-4 py-2.5 text-sm w-full
+                     focus:outline-none focus:ring-2 focus:ring-amber-400 mb-3">
+            <button onclick="requestPairing()"
+              class="w-full py-2.5 text-sm font-bold text-white rounded-xl bg-amber-500 hover:bg-amber-600 transition">
+              Generar código de vinculación
+            </button>
+
+            <!-- Resultado -->
+            <div id="pairingResult" class="hidden mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+              <p class="text-xs text-gray-500 mb-2">
+                Ingresa este código en WhatsApp →<br>
+                <strong>Dispositivos vinculados → Vincular con número de teléfono</strong>
+              </p>
+              <p id="pairingCode" class="text-4xl font-extrabold tracking-[0.25em] text-amber-600"></p>
+              <p class="text-[10px] text-gray-400 mt-2">El código expira en ~60 segundos</p>
+            </div>
+            <p id="pairingError" class="hidden text-xs text-red-500 mt-3 p-2 bg-red-50 rounded-lg"></p>
           </div>
 
         </div>
@@ -211,16 +239,18 @@ socket.on('status', ({ status, reason }) => {
   const off  = document.getElementById('panelOff');
 
   dot.className = 'dot';
-  [qr, ok, off].forEach(p => p.classList.add('hidden'));
+  [qr, ok, off].forEach(p => { p.classList.add('hidden'); p.classList.remove('flex'); });
 
   if (status === 'connected') {
     dot.classList.add('dot-green');
     text.textContent = 'Conectado';
     ok.classList.remove('hidden');
+    ok.classList.add('flex');
   } else if (status === 'qr' || status === 'authenticated') {
     dot.classList.add('dot-amber');
     text.textContent = status === 'qr' ? 'Escanear QR' : 'Autenticando…';
     qr.classList.remove('hidden');
+    qr.classList.add('flex');
   } else {
     dot.classList.add('dot-red');
     text.textContent = status === 'max_reconnect_reached'
@@ -228,6 +258,7 @@ socket.on('status', ({ status, reason }) => {
       : status === 'auth_failed' ? 'Sesión inválida' : 'Desconectado';
     document.getElementById('offReason').textContent = reason || '';
     off.classList.remove('hidden');
+    off.classList.add('flex');
   }
 });
 
@@ -404,6 +435,15 @@ function showToast(phone, message) {
   const t = document.getElementById('sstToast');
   t.classList.remove('hidden');
   setTimeout(() => t.classList.add('hidden'), 9000);
+}
+
+// ─── Tab switcher ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  const isQR = tab === 'qr';
+  document.getElementById('tabQR').className      = `flex-1 py-2 transition ${isQR ? 'tab-active' : 'tab-inactive'}`;
+  document.getElementById('tabNum').className     = `flex-1 py-2 transition ${isQR ? 'tab-inactive' : 'tab-active'}`;
+  document.getElementById('contentQR').classList.toggle('hidden', !isQR);
+  document.getElementById('contentNum').classList.toggle('hidden', isQR);
 }
 
 // ─── Pairing code ─────────────────────────────────────────────────────────────
