@@ -4,7 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const storageManager = require('./src/storageManager');
-const { initWhatsApp } = require('./src/whatsappBot');
+const { initWhatsApp, requestPairingCode } = require('./src/whatsappBot');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +26,17 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/kpi/categories', (req, res) => {
   try {
     res.json(storageManager.getCategoryStats());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/pairing-code', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Falta el número de teléfono.' });
+  try {
+    const code = await requestPairingCode(phone);
+    res.json({ code });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

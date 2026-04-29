@@ -10,6 +10,7 @@ const MAX_RECONNECT  = 5;
 let client;
 let reconnectAttempts = 0;
 let currentIo;
+let qrReady = false; // true when client is in QR state and ready for pairing code
 
 // ─── Client factory ───────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ function attachEvents(io) {
   client.on('qr', async (qr) => {
     console.log('[WHATSAPP] Nuevo QR generado — escanear en el dashboard.');
     global.whatsappStatus = 'qr';
+    qrReady = true;
     try {
       const dataUrl = await qrcode.toDataURL(qr, { width: 256 });
       io.emit('qr', { qr: dataUrl });
@@ -80,6 +82,7 @@ function attachEvents(io) {
   client.on('authenticated', () => {
     console.log('[WHATSAPP] Sesión autenticada.');
     global.whatsappStatus = 'authenticated';
+    qrReady = false;
     io.emit('status', { status: 'authenticated' });
     reconnectAttempts = 0;
   });
@@ -163,4 +166,15 @@ function initWhatsApp(io) {
   });
 }
 
-module.exports = { initWhatsApp };
+// ─── Pairing code (vincular por número de teléfono) ──────────────────────────
+
+async function requestPairingCode(phone) {
+  if (!qrReady) throw new Error('El cliente no está en estado QR. Espera a que aparezca el QR primero.');
+  // WhatsApp requiere el número sin + y sin espacios, con código de país (ej: 573205932136)
+  const cleaned = phone.replace(/\D/g, '');
+  const code = await client.requestPairingCode(cleaned);
+  console.log(`[WHATSAPP] Pairing code para ${cleaned}: ${code}`);
+  return code;
+}
+
+module.exports = { initWhatsApp, requestPairingCode };

@@ -71,11 +71,31 @@
         <div class="flex-1 flex items-center justify-center">
 
           <!-- QR waiting -->
-          <div id="panelQR" class="hidden text-center">
+          <div id="panelQR" class="hidden text-center w-full">
             <p class="text-sm font-medium text-amber-600 mb-3">Escanea con WhatsApp</p>
             <img id="qrImg" src="" alt="QR Code"
-              class="rounded-xl border border-gray-200 shadow-md mx-auto"
-              style="width:220px;height:220px;object-fit:contain">
+              class="rounded-xl border border-gray-200 shadow-md mx-auto mb-4"
+              style="width:200px;height:200px;object-fit:contain">
+
+            <!-- Vincular por número -->
+            <div class="border-t border-gray-100 pt-4 mt-2">
+              <p class="text-xs text-gray-500 mb-2">¿No puedes escanear? Vincula con tu número:</p>
+              <div class="flex gap-2 justify-center">
+                <input id="pairingPhone" type="tel" placeholder="573205932136"
+                  class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-44
+                         focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <button onclick="requestPairing()"
+                  class="px-3 py-1.5 text-xs font-semibold text-white rounded-lg bg-amber-500 hover:bg-amber-600 transition">
+                  Obtener código
+                </button>
+              </div>
+              <div id="pairingResult" class="hidden mt-3">
+                <p class="text-xs text-gray-500 mb-1">Ingresa este código en WhatsApp →<br>Dispositivos vinculados → Vincular con número:</p>
+                <p id="pairingCode"
+                  class="text-3xl font-extrabold tracking-[0.3em] text-amber-600 mt-1"></p>
+              </div>
+              <p id="pairingError" class="hidden text-xs text-red-500 mt-2"></p>
+            </div>
           </div>
 
           <!-- Connected -->
@@ -384,6 +404,30 @@ function showToast(phone, message) {
   const t = document.getElementById('sstToast');
   t.classList.remove('hidden');
   setTimeout(() => t.classList.add('hidden'), 9000);
+}
+
+// ─── Pairing code ─────────────────────────────────────────────────────────────
+async function requestPairing() {
+  const phone   = document.getElementById('pairingPhone').value.trim();
+  const result  = document.getElementById('pairingResult');
+  const codeEl  = document.getElementById('pairingCode');
+  const errorEl = document.getElementById('pairingError');
+
+  result.classList.add('hidden');
+  errorEl.classList.add('hidden');
+
+  if (!phone) { errorEl.textContent = 'Ingresa tu número con código de país (ej: 573205932136)'; errorEl.classList.remove('hidden'); return; }
+
+  try {
+    const res  = await fetch('/api/pairing-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error desconocido');
+    codeEl.textContent = data.code;
+    result.classList.remove('hidden');
+  } catch(e) {
+    errorEl.textContent = e.message;
+    errorEl.classList.remove('hidden');
+  }
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
