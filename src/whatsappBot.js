@@ -5,13 +5,15 @@ const qrcode = require('qrcode');
 const path = require('path');
 const { processMessage } = require('./aiEngine');
 const storage = require('./storageManager');
-const { sendSSTAlert } = require('./emailService');
+const { sendSSTAlert, sendConsultaResponse } = require('./emailService');
 
 const SESSIONS_DIR = path.join(__dirname, '..', 'data', 'sessions');
 const MAX_RECONNECT = 5;
+const EMAIL_REGEX   = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 let sock;
 let reconnectAttempts = 0;
+const awaitingEmail = new Map(); // phone → true cuando esperamos el email del empleado
 
 // ─── Extraer texto plano del mensaje Baileys ──────────────────────────────────
 
@@ -115,11 +117,31 @@ async function connect(io) {
 
       await storage.saveMessage({ phone, role: 'user', content: text, category: 'incoming' });
 
+      // ── Captura de email del empleado ──
+      if (awaitingEmail.get(phone)) {
+        if (EMAIL_REGEX.test(text.trim())) {
+          const email = text.trim().toLowerCase();
+          storage.saveEmployeeEmail(phone, email);
+          awaitingEmail.delete(phone);
+          await sock.sendMessage(jid, {
+            text: `✅ ¡Listo! Tu correo *${email}* quedó registrado. A partir de ahora recibirás un resumen de cada consulta en tu bandeja de entrada.`
+          });
+          console.log(`[EMAIL] Correo registrado para ${phone}: ${email}`);
+        } else {
+          await sock.sendMessage(jid, {
+            text: `Por favor ingresa un correo electrónico válido (ej: nombre@empresa.com) para continuar.`
+          });
+        }
+        return;
+      }
+
       try {
         const { response, category, isSST } = await processMessage(phone, text);
 
         await storage.saveMessage({ phone, role: 'assistant', content: response, category });
         storage.saveKPIEvent({ phone, category, messagePreview: text });
+
+        const ts = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
 
         io.emit('new_message', {
           phone,
@@ -129,13 +151,31 @@ async function connect(io) {
         });
 
         if (isSST) {
-          const ts = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
           await sendSSTAlert({ phone, message: text, timestamp: ts });
           io.emit('sst_alert', { phone, message: text });
           console.warn(`[SST CRÍTICO] Accidente reportado por ${phone}`);
         }
 
         await sock.sendMessage(jid, { text: response });
+
+        // ── Enviar resumen por correo si el empleado ya tiene email registrado ──
+        const employeeEmail = storage.getEmployeeEmail(phone);
+        if (employeeEmail) {
+          sendConsultaResponse({
+            to:          employeeEmail,
+            phone,
+            userMessage: text,
+            botResponse: response,
+            category,
+            timestamp:   ts
+          }).catch(err => console.error('[EMAIL] Error enviando resumen:', err.message));
+        } else {
+          // Primera vez — pedir correo después de responder
+          awaitingEmail.set(phone, true);
+          await sock.sendMessage(jid, {
+            text: `📧 Para recibir un resumen de tus consultas en tu correo, respóndeme con tu dirección de email.`
+          });
+        }
 
       } catch (err) {
         console.error('[AI] Error:', err.message);

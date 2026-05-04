@@ -1,16 +1,8 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const transporter = nodemailer.createTransport({
-  host:   process.env.SMTP_HOST || 'smtp.gmail.com',
-  port:   parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
-
-const DEST = 'apturnos@megatiendas.co';
+const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM   = process.env.RESEND_FROM || 'Bot Gestión Humana <gestionhumana@megatiendas.co>';
+const SST_DEST = 'apturnos@megatiendas.co';
 
 // ─── SST accident alert ───────────────────────────────────────────────────────
 
@@ -44,14 +36,56 @@ async function sendSSTAlert({ phone, message, timestamp }) {
       </div>
     </div>`;
 
-  await transporter.sendMail({
-    from:    `"Bot Gestión Humana" <${process.env.SMTP_USER}>`,
-    to:      DEST,
+  await resend.emails.send({
+    from:    FROM,
+    to:      SST_DEST,
     subject: `🚨 ACCIDENTE SST — Cel ${phone} — ${timestamp}`,
     html
   });
 
-  console.log(`[EMAIL] Alerta SST enviada a ${DEST} para ${phone}`);
+  console.log(`[EMAIL] Alerta SST enviada a ${SST_DEST} para ${phone}`);
+}
+
+// ─── Consulta summary to employee ────────────────────────────────────────────
+
+async function sendConsultaResponse({ to, phone, userMessage, botResponse, category, timestamp }) {
+  const catColors = {
+    SST:      '#D41830',
+    Nómina:   '#1a56db',
+    Jurídica: '#7e3af2',
+    'P&P':    '#057a55',
+    General:  '#374151'
+  };
+  const color = catColors[category] || catColors.General;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto">
+      <div style="background:${color};color:#fff;padding:20px;border-radius:8px 8px 0 0">
+        <h1 style="margin:0;font-size:17px">Resumen de tu consulta — ${category}</h1>
+        <p style="margin:4px 0 0;font-size:12px">Bot Gestión Humana · Megatiendas Invercomer · ${timestamp}</p>
+      </div>
+      <div style="padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px;background:#fff">
+        <p style="font-size:13px;color:#6b7280;margin:0 0 6px">Tu consulta:</p>
+        <div style="background:#f3f4f6;border-left:3px solid ${color};padding:12px 16px;border-radius:4px;font-size:14px;color:#374151;margin-bottom:18px">
+          ${userMessage}
+        </div>
+        <p style="font-size:13px;color:#6b7280;margin:0 0 6px">Respuesta:</p>
+        <div style="font-size:14px;color:#111827;line-height:1.6;white-space:pre-wrap">${botResponse}</div>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0">
+        <p style="font-size:12px;color:#9ca3af;margin:0">
+          Para más información comunícate con Gestión Humana: <strong>apturnos@megatiendas.co</strong>
+        </p>
+      </div>
+    </div>`;
+
+  await resend.emails.send({
+    from:    FROM,
+    to,
+    subject: `[${category}] Resumen de tu consulta — ${timestamp}`,
+    html
+  });
+
+  console.log(`[EMAIL] Resumen enviado a ${to} (${phone}) — ${category}`);
 }
 
 // ─── Daily KPI report ─────────────────────────────────────────────────────────
@@ -87,9 +121,9 @@ async function sendDailyReport(stats) {
       </div>
     </div>`;
 
-  await transporter.sendMail({
-    from:    `"Bot Gestión Humana" <${process.env.SMTP_USER}>`,
-    to:      DEST,
+  await resend.emails.send({
+    from:    FROM,
+    to:      SST_DEST,
     subject: `Reporte Diario Bot GH — ${date}`,
     html
   });
@@ -97,4 +131,4 @@ async function sendDailyReport(stats) {
   console.log('[EMAIL] Reporte diario enviado.');
 }
 
-module.exports = { sendSSTAlert, sendDailyReport };
+module.exports = { sendSSTAlert, sendConsultaResponse, sendDailyReport };

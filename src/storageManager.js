@@ -24,6 +24,12 @@ async function init() {
     CREATE INDEX IF NOT EXISTS idx_phone     ON kpi_events(phone);
     CREATE INDEX IF NOT EXISTS idx_category  ON kpi_events(category);
     CREATE INDEX IF NOT EXISTS idx_timestamp ON kpi_events(timestamp);
+
+    CREATE TABLE IF NOT EXISTS employee_emails (
+      phone      TEXT PRIMARY KEY,
+      email      TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   console.log('[STORAGE] Base de datos y directorios listos.');
@@ -111,4 +117,17 @@ async function getConversations({ phone, month, year }) {
   return results.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-module.exports = { init, saveMessage, saveKPIEvent, getKPIStats, getCategoryStats, getConversations };
+// ─── Employee emails ──────────────────────────────────────────────────────────
+
+function saveEmployeeEmail(phone, email) {
+  db.prepare(
+    'INSERT INTO employee_emails (phone, email, created_at) VALUES (?, ?, ?) ON CONFLICT(phone) DO UPDATE SET email = excluded.email'
+  ).run(phone, email, new Date().toISOString());
+}
+
+function getEmployeeEmail(phone) {
+  const row = db.prepare('SELECT email FROM employee_emails WHERE phone = ?').get(phone);
+  return row ? row.email : null;
+}
+
+module.exports = { init, saveMessage, saveKPIEvent, getKPIStats, getCategoryStats, getConversations, saveEmployeeEmail, getEmployeeEmail };
