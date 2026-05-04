@@ -1,7 +1,8 @@
-const { Resend } = require('resend');
+const sgMail = require('@sendgrid/mail');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM   = process.env.RESEND_FROM || 'Bot Gestión Humana <gestionhumana@megatiendas.co>';
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+const FROM     = process.env.SENDGRID_FROM || 'gestionhumana@megatiendas.co';
 const SST_DEST = 'apturnos@megatiendas.co';
 
 // ─── SST accident alert ───────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ async function sendSSTAlert({ phone, message, timestamp }) {
       </div>
     </div>`;
 
-  await resend.emails.send({
+  await sgMail.send({
     from:    FROM,
     to:      SST_DEST,
     subject: `🚨 ACCIDENTE SST — Cel ${phone} — ${timestamp}`,
@@ -78,7 +79,7 @@ async function sendConsultaResponse({ to, phone, userMessage, botResponse, categ
       </div>
     </div>`;
 
-  await resend.emails.send({
+  await sgMail.send({
     from:    FROM,
     to,
     subject: `[${category}] Resumen de tu consulta — ${timestamp}`,
@@ -121,7 +122,7 @@ async function sendDailyReport(stats) {
       </div>
     </div>`;
 
-  await resend.emails.send({
+  await sgMail.send({
     from:    FROM,
     to:      SST_DEST,
     subject: `Reporte Diario Bot GH — ${date}`,
