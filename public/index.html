@@ -5,18 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bot Gestión Humana — Megatiendas</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     body { background: #f1f5f9; }
-    .tab-active   { background:#003087; color:#fff; }
-    .tab-inactive { background:#f8fafc; color:#64748b; }
-    .tab-inactive:hover { background:#f1f5f9; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-    .dot-green  { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
-    .dot-amber  { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; animation: blink 1s infinite; }
-    .dot-red    { background: #ef4444; }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
     #msgList::-webkit-scrollbar,
     #convResults::-webkit-scrollbar { width: 4px; }
     #msgList::-webkit-scrollbar-thumb,
@@ -25,28 +16,30 @@
 </head>
 <body class="min-h-screen">
 
-  <!-- ── Header ── -->
   <header style="background:#003087" class="shadow-md text-white">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
       <div>
         <p class="font-bold text-base leading-tight">Megatiendas Invercomer</p>
-        <p class="text-xs text-blue-200">Bot Gestión Humana · Monitor en Vivo</p>
+        <p class="text-xs text-blue-200">Bot Gestión Humana · Dashboard</p>
       </div>
       <div class="flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span class="text-sm font-medium">Monitor en Vivo</span>
+        <span class="text-sm font-medium">Activo</span>
+        <a href="/chat" class="ml-4 text-xs bg-white text-blue-900 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 transition">
+          Ir al Chat →
+        </a>
       </div>
     </div>
   </header>
 
   <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-    <!-- ── KPI Cards ── -->
+    <!-- KPI Cards -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <div class="bg-white rounded-2xl shadow p-5 border-l-[5px]" style="border-color:#003087">
         <p class="text-xs text-gray-400 uppercase tracking-widest">Hoy</p>
         <p class="text-4xl font-extrabold text-gray-800 mt-1" id="kToday">—</p>
-        <p class="text-xs text-gray-400 mt-0.5">mensajes</p>
+        <p class="text-xs text-gray-400 mt-0.5">consultas</p>
       </div>
       <div class="bg-white rounded-2xl shadow p-5 border-l-[5px]" style="border-color:#D41830">
         <p class="text-xs text-gray-400 uppercase tracking-widest">Total</p>
@@ -65,10 +58,9 @@
       </div>
     </div>
 
-    <!-- ── Estado + Chart ── -->
+    <!-- Canal + Chart -->
     <div class="grid md:grid-cols-2 gap-6">
 
-      <!-- Bot status -->
       <div class="bg-white rounded-2xl shadow p-6 flex flex-col justify-center">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Canal de Atención</p>
         <div class="flex items-center gap-4">
@@ -79,7 +71,7 @@
           </div>
           <div>
             <p class="font-bold text-gray-800 text-lg">Web + Correo</p>
-            <p class="text-xs text-gray-500 mt-0.5">Los colaboradores consultan en <strong>/chat</strong> y reciben la respuesta en su correo electrónico.</p>
+            <p class="text-xs text-gray-500 mt-0.5">Los colaboradores consultan en <strong>/chat</strong> y reciben respuesta en su correo.</p>
             <div class="flex items-center gap-1.5 mt-2">
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span class="text-xs text-emerald-600 font-semibold">Activo vía SendGrid</span>
@@ -88,19 +80,17 @@
         </div>
       </div>
 
-      <!-- Chart -->
       <div class="bg-white rounded-2xl shadow p-6">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Consultas por Categoría</p>
         <canvas id="catChart"></canvas>
         <p id="chartEmpty" class="text-sm text-gray-400 text-center mt-6 hidden">Sin datos aún.</p>
       </div>
-
     </div>
 
-    <!-- ── Live feed ── -->
+    <!-- Actividad -->
     <div class="bg-white rounded-2xl shadow p-6">
       <div class="flex items-center justify-between mb-4">
-        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest">Actividad en Tiempo Real</p>
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest">Actividad Reciente</p>
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
       </div>
       <div id="msgList" class="space-y-2 max-h-60 overflow-y-auto pr-1">
@@ -108,15 +98,13 @@
       </div>
     </div>
 
-    <!-- ── Conversation explorer ── -->
+    <!-- Conversaciones -->
     <div class="bg-white rounded-2xl shadow p-6">
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Explorador de Conversaciones</p>
       <div class="flex flex-wrap gap-3 mb-4">
-        <input id="sPhone" type="text" placeholder="Celular (ej: 3001234567)"
-          class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]
-                 focus:outline-none focus:ring-2 focus:ring-blue-400">
-        <select id="sMonth"
-          class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <input id="sPhone" type="text" placeholder="Correo o teléfono"
+          class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px] focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <select id="sMonth" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
           <option value="">Todos los meses</option>
           <option value="01">Enero</option><option value="02">Febrero</option>
           <option value="03">Marzo</option><option value="04">Abril</option>
@@ -125,8 +113,7 @@
           <option value="09">Septiembre</option><option value="10">Octubre</option>
           <option value="11">Noviembre</option><option value="12">Diciembre</option>
         </select>
-        <select id="sYear"
-          class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <select id="sYear" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
           <option value="2025">2025</option>
           <option value="2026" selected>2026</option>
         </select>
@@ -141,73 +128,46 @@
 
   </main>
 
-  <!-- SST toast -->
-  <div id="sstToast"
-    class="fixed bottom-5 right-5 max-w-sm bg-red-50 border-2 border-red-500 text-red-700
-           rounded-2xl shadow-2xl p-4 hidden z-50 transition-all">
+  <!-- SST Toast -->
+  <div id="sstToast" class="fixed bottom-5 right-5 max-w-sm bg-red-50 border-2 border-red-500 text-red-700 rounded-2xl shadow-2xl p-4 hidden z-50">
     <p class="font-bold text-sm">⚠️ Alerta SST — Acción inmediata</p>
     <p class="text-xs mt-1 leading-relaxed" id="sstMsg"></p>
   </div>
 
   <footer class="text-center py-6 text-xs text-gray-400">
-    Megatiendas Invercomer © 2026 — Bot Gestión Humana · Ley 2466 · Ley 1581
+    Megatiendas Invercomer © 2026 — Bot Gestión Humana
   </footer>
 
 <script>
-// ─── Config ───────────────────────────────────────────────────────────────────
 const CAT_COLORS = {
-  Nómina:   '#003087',
-  SST:      '#D41830',
-  Jurídica: '#7c3aed',
-  'P&P':    '#f59e0b',
-  General:  '#6b7280'
+  Nómina:'#003087', SST:'#D41830', Jurídica:'#7c3aed', 'P&P':'#f59e0b', General:'#6b7280'
 };
 let catChart = null;
 let sstCount  = 0;
+let lastTotal = 0;
 
-// ─── Socket ───────────────────────────────────────────────────────────────────
-const socket = io();
-
-socket.on('new_message', ({ phone, category, preview, timestamp }) => {
-  addToFeed(phone, category, preview, timestamp);
-  refreshStats();
-  refreshChart();
-});
-
-socket.on('sst_alert', ({ phone, message }) => {
-  sstCount++;
-  document.getElementById('kSST').textContent = sstCount;
-  showToast(phone, message);
-});
-
-// ─── Feed ─────────────────────────────────────────────────────────────────────
 function addToFeed(phone, category, preview, timestamp) {
   const list  = document.getElementById('msgList');
   const empty = document.getElementById('msgEmpty');
   if (empty) empty.remove();
-
   const color = CAT_COLORS[category] || '#6b7280';
-  const time  = new Date(timestamp).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-
-  const el = document.createElement('div');
-  el.className = 'flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors';
+  const time  = new Date(timestamp).toLocaleTimeString('es-CO', { hour:'2-digit', minute:'2-digit' });
+  const el    = document.createElement('div');
+  el.className = 'flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50';
   el.innerHTML = `
-    <span class="dot mt-1.5 flex-shrink-0" style="background:${color}"></span>
+    <span style="background:${color};width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;display:inline-block"></span>
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs font-medium text-gray-700">${phone}</span>
-        <span class="text-[10px] px-1.5 py-0.5 rounded-full text-white font-semibold"
-              style="background:${color}">${category}</span>
+        <span class="text-xs font-medium text-gray-700 truncate">${phone}</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded-full text-white font-semibold" style="background:${color}">${category}</span>
         <span class="text-[10px] text-gray-400 ml-auto">${time}</span>
       </div>
       <p class="text-xs text-gray-500 truncate mt-0.5">${preview}</p>
     </div>`;
-
   list.prepend(el);
   while (list.children.length > 25) list.removeChild(list.lastChild);
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
 async function refreshStats() {
   try {
     const d = await fetch('/api/stats').then(r => r.json());
@@ -215,125 +175,84 @@ async function refreshStats() {
     document.getElementById('kTotal').textContent = d.totalCount  ?? '—';
     document.getElementById('kUsers').textContent = d.uniqueUsers ?? '—';
 
-    const list = document.getElementById('msgList');
-    if (!list.children.length || list.querySelector('#msgEmpty')) {
-      (d.recentMessages || []).reverse().forEach(m =>
-        addToFeed(m.phone, m.category, m.message_preview || '', m.timestamp)
-      );
+    if (d.totalCount > lastTotal) {
+      const newMsgs = (d.recentMessages || []).slice(0, d.totalCount - lastTotal);
+      newMsgs.reverse().forEach(m => addToFeed(m.phone, m.category, m.message_preview || '', m.timestamp));
+      lastTotal = d.totalCount;
+    } else if (lastTotal === 0 && d.recentMessages?.length) {
+      d.recentMessages.slice().reverse().forEach(m => addToFeed(m.phone, m.category, m.message_preview || '', m.timestamp));
+      lastTotal = d.totalCount;
     }
   } catch(e) { console.error(e); }
 }
 
-// ─── Chart ────────────────────────────────────────────────────────────────────
 async function refreshChart() {
   try {
-    const data = await fetch('/api/kpi/categories').then(r => r.json());
+    const data  = await fetch('/api/kpi/categories').then(r => r.json());
     const empty = document.getElementById('chartEmpty');
-
     if (!data.length) { empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-
     const labels = data.map(d => d.category);
     const counts = data.map(d => d.count);
     const colors = labels.map(l => CAT_COLORS[l] || '#6b7280');
-
     if (catChart) {
-      catChart.data.labels                       = labels;
-      catChart.data.datasets[0].data             = counts;
-      catChart.data.datasets[0].backgroundColor  = colors;
+      catChart.data.labels = labels;
+      catChart.data.datasets[0].data = counts;
+      catChart.data.datasets[0].backgroundColor = colors;
       catChart.update();
     } else {
       catChart = new Chart(document.getElementById('catChart').getContext('2d'), {
         type: 'bar',
-        data: {
-          labels,
-          datasets: [{
-            label: 'Consultas',
-            data: counts,
-            backgroundColor: colors,
-            borderRadius: 6,
-            borderSkipped: false
-          }]
-        },
+        data: { labels, datasets: [{ label:'Consultas', data:counts, backgroundColor:colors, borderRadius:6, borderSkipped:false }] },
         options: {
           responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: c => ` ${c.parsed.y} consultas` } }
-          },
-          scales: {
-            y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 }, grid: { color: '#f1f5f9' } },
-            x: { grid: { display: false } }
-          }
+          plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: c => ` ${c.parsed.y} consultas` } } },
+          scales: { y:{ beginAtZero:true, ticks:{ stepSize:1, precision:0 }, grid:{ color:'#f1f5f9' } }, x:{ grid:{ display:false } } }
         }
       });
     }
   } catch(e) { console.error(e); }
 }
 
-// ─── Conversation search ──────────────────────────────────────────────────────
 async function searchConversations() {
-  const phone  = document.getElementById('sPhone').value.trim();
-  const month  = document.getElementById('sMonth').value;
-  const year   = document.getElementById('sYear').value;
-  const box    = document.getElementById('convResults');
-
+  const phone = document.getElementById('sPhone').value.trim();
+  const month = document.getElementById('sMonth').value;
+  const year  = document.getElementById('sYear').value;
+  const box   = document.getElementById('convResults');
   box.innerHTML = '<p class="text-sm text-gray-400 text-center py-6">Buscando…</p>';
-
   try {
     const q = new URLSearchParams({ year });
     if (phone) q.append('phone', phone);
     if (month) q.append('month', month);
-
     const data = await fetch(`/api/conversations?${q}`).then(r => r.json());
-
-    if (!data.length) {
-      box.innerHTML = '<p class="text-sm text-gray-400 text-center py-6">Sin resultados para los filtros seleccionados.</p>';
-      return;
-    }
-
+    if (!data.length) { box.innerHTML = '<p class="text-sm text-gray-400 text-center py-6">Sin resultados.</p>'; return; }
     box.innerHTML = '';
     data.forEach(conv => {
       const msgs = conv.messages.map(m => `
         <div class="flex gap-2 py-1.5 border-b border-slate-100 last:border-0 text-xs">
-          <span class="w-14 flex-shrink-0 font-semibold ${m.role === 'user' ? 'text-blue-500' : 'text-emerald-600'}">
-            ${m.role === 'user' ? 'Usuario' : 'Bot'}
-          </span>
+          <span class="w-14 flex-shrink-0 font-semibold ${m.role==='user'?'text-blue-500':'text-emerald-600'}">${m.role==='user'?'Usuario':'Bot'}</span>
           <p class="text-gray-600 leading-relaxed flex-1">${m.content}</p>
-          <span class="text-gray-400 flex-shrink-0">
-            ${new Date(m.timestamp).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-          </span>
+          <span class="text-gray-400 flex-shrink-0">${new Date(m.timestamp).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</span>
         </div>`).join('');
-
       const card = document.createElement('div');
       card.className = 'border border-slate-200 rounded-xl overflow-hidden';
       card.innerHTML = `
         <div class="flex items-center justify-between bg-slate-50 px-4 py-2 border-b border-slate-200">
-          <span class="text-sm font-semibold text-gray-700">📱 ${conv.phone}</span>
+          <span class="text-sm font-semibold text-gray-700">📧 ${conv.phone}</span>
           <span class="text-xs text-gray-400">${conv.date}</span>
         </div>
         <div class="max-h-52 overflow-y-auto px-4 py-2">${msgs}</div>`;
       box.appendChild(card);
     });
   } catch(e) {
-    box.innerHTML = '<p class="text-sm text-red-400 text-center py-6">Error al consultar conversaciones.</p>';
-    console.error(e);
+    box.innerHTML = '<p class="text-sm text-red-400 text-center py-6">Error al consultar.</p>';
   }
 }
 
-// ─── SST toast ────────────────────────────────────────────────────────────────
-function showToast(phone, message) {
-  document.getElementById('sstMsg').textContent = `${phone}: ${message.substring(0, 100)}`;
-  const t = document.getElementById('sstToast');
-  t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), 9000);
-}
-
-// ─── Boot ─────────────────────────────────────────────────────────────────────
 refreshStats();
 refreshChart();
-setInterval(refreshStats,  30_000);
-setInterval(refreshChart,  60_000);
+setInterval(refreshStats, 15000);
+setInterval(refreshChart, 30000);
 </script>
 </body>
 </html>

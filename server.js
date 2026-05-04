@@ -1,16 +1,12 @@
 require('dotenv').config();
 const express = require('express');
-const http    = require('http');
-const { Server } = require('socket.io');
 const path    = require('path');
 const storage = require('./src/storageManager');
 const { processMessage }    = require('./src/aiEngine');
 const { sendConsultaResponse, sendSSTAlert } = require('./src/emailService');
 
-const app    = express();
-const server = http.createServer(app);
-const io     = new Server(server);
-const PORT   = process.env.PORT || 3000;
+const app   = express();
+const PORT  = process.env.PORT || 3000;
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 app.use(express.json());
@@ -33,20 +29,12 @@ app.post('/api/chat', async (req, res) => {
     const { response, category, isSST } = await processMessage(cleanEmail, cleanMsg);
     const ts = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
 
-    await storage.saveMessage({ phone: cleanEmail, role: 'user',      content: cleanMsg,  category });
-    await storage.saveMessage({ phone: cleanEmail, role: 'assistant', content: response,  category });
+    await storage.saveMessage({ phone: cleanEmail, role: 'user',      content: cleanMsg, category });
+    await storage.saveMessage({ phone: cleanEmail, role: 'assistant', content: response, category });
     storage.saveKPIEvent({ phone: cleanEmail, category, messagePreview: cleanMsg });
-
-    io.emit('new_message', {
-      phone:     cleanEmail,
-      category,
-      preview:   cleanMsg.substring(0, 90),
-      timestamp: new Date().toISOString()
-    });
 
     if (isSST) {
       await sendSSTAlert({ phone: cleanEmail, message: cleanMsg, timestamp: ts });
-      io.emit('sst_alert', { phone: cleanEmail, message: cleanMsg });
     }
 
     await sendConsultaResponse({
@@ -84,18 +72,10 @@ app.get('/api/conversations', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── Socket ────────────────────────────────────────────────────────────────────
-
-io.on('connection', (socket) => {
-  console.log('[SOCKET] Dashboard conectado:', socket.id);
-  socket.on('disconnect', () => console.log('[SOCKET] Dashboard desconectado:', socket.id));
-});
-
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-async function start() {
-  await storage.init();
-  server.listen(PORT, () => console.log(`\n[SERVER] Corriendo en http://localhost:${PORT}\n`));
-}
+storage.init().then(() => {
+  app.listen(PORT, () => console.log(`[SERVER] http://localhost:${PORT}`));
+}).catch(console.error);
 
-start().catch(console.error);
+module.exports = app;
